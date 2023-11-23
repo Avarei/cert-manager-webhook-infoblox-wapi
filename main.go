@@ -82,6 +82,7 @@ type customDNSProviderConfig struct {
 	SslVerify           bool                     `json:"sslVerify"           default:"false"`
 	HttpRequestTimeout  int                      `json:"httpRequestTimeout"  default:"60"`
 	HttpPoolConnections int                      `json:"httpPoolConnections" default:"10"`
+	ExtAttrs            map[string]string        `json:"extAttrs"`
 }
 
 // Name is used as the name for this DNS solver when referencing it on the ACME
@@ -121,13 +122,20 @@ func (c *customDNSProviderSolver) Present(ch *v1alpha1.ChallengeRequest) error {
 
 	if recordRef != "" {
 		logf.V(logf.InfoLevel).InfoS("TXT record already present", "name", recordName, "ref", recordRef)
-	} else {
-		recordRef, err := c.CreateTXTRecord(ib, recordName, ch.Key, cfg.View)
-		if err != nil {
-			return err
-		}
-		logf.V(logf.InfoLevel).InfoS("Created new TXT record", "name", recordName, "ref", recordRef)
+		return nil
 	}
+
+	ea := ibclient.EA{}
+	for eaKey, eaValue := range cfg.ExtAttrs {
+		ea[eaKey] = eaValue
+	}
+
+	recordRef, err = c.CreateTXTRecord(ib, recordName, ch.Key, cfg.View, ea)
+
+	if err != nil {
+		return err
+	}
+	logf.V(logf.InfoLevel).InfoS("Created new TXT record", "name", recordName, "ref", recordRef)
 
 	return nil
 }
@@ -301,11 +309,12 @@ func (c *customDNSProviderSolver) GetTXTRecord(ib ibclient.IBConnector, name str
 }
 
 // Create a TXT record in Infoblox
-func (c *customDNSProviderSolver) CreateTXTRecord(ib ibclient.IBConnector, name string, text string, view string) (string, error) {
+func (c *customDNSProviderSolver) CreateTXTRecord(ib ibclient.IBConnector, name string, text string, view string, ea ibclient.EA) (string, error) {
 	recordTXT := ibclient.NewRecordTXT(ibclient.RecordTXT{
 		Name: name,
 		Text: text,
 		View: view,
+		Ea:   ea,
 	})
 
 	return ib.CreateObject(recordTXT)
